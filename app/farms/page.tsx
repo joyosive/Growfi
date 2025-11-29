@@ -141,8 +141,12 @@ const FarmsPage = () => {
                   </div>
                 </div>
 
-                <div className="relative h-64 lg:h-auto bg-gradient-to-br from-primary-100 to-primary-50 rounded-xl flex items-center justify-center">
-                  <Leaf className="h-32 w-32 text-primary-300" />
+                <div className="relative h-64 lg:h-auto rounded-xl overflow-hidden">
+                  <img
+                    src={selectedFarmDetails.image}
+                    alt={selectedFarmDetails.name}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
               </div>
             </div>

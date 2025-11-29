@@ -7,7 +7,7 @@ export const torontoFarms: Farm[] = [
     location: 'Downsview',
     address: '2 Disco Rd, Etobicoke, ON',
     description: 'Leading urban farm specializing in organic vegetables and herbs for local communities.',
-    image: '/farms/fresh-city.jpg',
+    image: '/farms-pictures/lettuce_farm.jpeg',
     totalPlots: 150,
     availablePlots: 45,
     sustainabilityScore: 92
@@ -18,7 +18,7 @@ export const torontoFarms: Farm[] = [
     location: 'North York',
     address: '4929 Jane St, North York, ON',
     description: 'Community-focused farm growing diverse produce with educational programs.',
-    image: '/farms/black-creek.jpg',
+    image: '/farms-pictures/brocolli_farm.jpeg',
     totalPlots: 80,
     availablePlots: 22,
     sustainabilityScore: 88
@@ -29,7 +29,7 @@ export const torontoFarms: Farm[] = [
     location: 'Scarborough',
     address: '155 Bonis Ave, Scarborough, ON',
     description: 'Rooftop greenhouse operation with year-round production capabilities.',
-    image: '/farms/urban-growers.jpg',
+    image: '/farms-pictures/microgreens-farm.jpeg',
     totalPlots: 200,
     availablePlots: 67,
     sustainabilityScore: 95
@@ -40,7 +40,7 @@ export const torontoFarms: Farm[] = [
     location: 'Cabbagetown',
     address: '201 Winchester St, Toronto, ON',
     description: 'Historic farm site with modern sustainable growing practices.',
-    image: '/farms/riverdale.jpg',
+    image: '/farms-pictures/spincah_farm.jpeg',
     totalPlots: 60,
     availablePlots: 18,
     sustainabilityScore: 85
@@ -51,7 +51,7 @@ export const torontoFarms: Farm[] = [
     location: 'Davenport',
     address: '90 Croatia St, Toronto, ON',
     description: 'Non-profit urban agriculture focused on food security and education.',
-    image: '/farms/foodshare.jpg',
+    image: '/farms-pictures/strawberry-farm.webp',
     totalPlots: 120,
     availablePlots: 38,
     sustainabilityScore: 90
@@ -66,7 +66,7 @@ export const availablePlants: Plant[] = [
     farmName: 'Fresh City Farms',
     type: 'vegetable',
     name: 'Heirloom Tomatoes',
-    image: '/plants/tomatoes.jpg',
+    image: '/farms-pictures/tomato_farm.webp',
     totalValue: 100,
     minInvestment: 10,
     soldPercentage: 65,

@@ -19,12 +19,16 @@ const StatCard = ({ icon: Icon, value, label, color }: any) => (
 );
 
 const StepCard = ({ number, title, description }: any) => (
-  <div className="text-center">
-    <div className="bg-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-md">
-      <span className="text-2xl font-bold text-primary-600">{number}</span>
+  <div className="bg-white rounded-2xl p-8 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-2 border border-gray-100">
+    <div className="text-center">
+      <div className="relative mb-6">
+        <div className="bg-primary-50 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto shadow-md">
+          <span className="text-3xl font-bold text-primary-600">{number}</span>
+        </div>
+      </div>
+      <h3 className="text-xl font-semibold text-neutral-900 mb-4">{title}</h3>
+      <p className="text-neutral-600 leading-relaxed">{description}</p>
     </div>
-    <h3 className="font-semibold text-neutral-900 mb-2">{title}</h3>
-    <p className="text-sm text-neutral-600">{description}</p>
   </div>
 );
 
@@ -64,8 +68,13 @@ export default function Home() {
   return (
     <div>
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-b from-primary-50 to-white py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="relative bg-gradient-to-b from-primary-50 to-white py-20 overflow-hidden">
+        {/* Background Image */}
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-10"
+          style={{ backgroundImage: "url('/urban-farming-bg.png')" }}
+        />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="text-center">
             <h1 className="text-5xl font-bold text-neutral-900 mb-6">
                 Co-own & co-grow sustainable urban food
@@ -73,31 +82,28 @@ export default function Home() {
             <p className="text-xl text-neutral-600 mb-8 max-w-3xl mx-auto">
               Own fractional shares of real plants. Earn weekly XRP yields. Support sustainable local agriculture.
             </p>
-            <div className="flex justify-center space-x-4">
-              <Link href="/farms" className="btn-primary inline-flex items-center">
-                Browse Farms <ArrowRight className="ml-2 h-5 w-5" />
-              </Link>
-              {!isConnected && (
-                <button onClick={connect} className="btn-secondary inline-flex items-center">
-                  <Wallet className="mr-2 h-5 w-5" />
-                  Connect Wallet
-                </button>
-              )}
-            </div>
+            {/*<div className="flex justify-center space-x-4">*/}
+            {/*  {!isConnected && (*/}
+            {/*    <button onClick={connect} className="btn-secondary inline-flex items-center">*/}
+            {/*      <Wallet className="mr-2 h-5 w-5" />*/}
+            {/*      Connect Wallet*/}
+            {/*    </button>*/}
+            {/*  )}*/}
+            {/*</div>*/}
           </div>
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="py-12 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            {stats.map((stat, index) => (
-              <StatCard key={index} {...stat} />
-            ))}
-          </div>
-        </div>
-      </section>
+      {/*/!* Stats Section *!/*/}
+      {/*<section className="py-12 bg-white">*/}
+      {/*  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">*/}
+      {/*    <div className="grid grid-cols-1 md:grid-cols-4 gap-8">*/}
+      {/*      {stats.map((stat, index) => (*/}
+      {/*        <StatCard key={index} {...stat} />*/}
+      {/*      ))}*/}
+      {/*    </div>*/}
+      {/*  </div>*/}
+      {/*</section>*/}
 
       {/* How It Works */}
       <section className="py-16 bg-neutral-50">
@@ -117,7 +123,7 @@ export default function Home() {
       <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center mb-8">
-            <h2 className="text-3xl font-bold text-neutral-900">Featured Toronto Farms</h2>
+            <h2 className="text-3xl font-bold text-neutral-900">Featured Farms</h2>
             <Link href="/farms" className="text-primary-600 hover:text-primary-700 font-medium inline-flex items-center">
               View all <ArrowRight className="ml-1 h-4 w-4" />
             </Link>

@@ -14,10 +14,12 @@ export default function FarmCard({ farm }: FarmCardProps) {
   return (
     <Link href={`/farms/${farm.id}`}>
       <div className="card group cursor-pointer">
-        <div className="relative h-48 -mx-6 -mt-6 mb-4 overflow-hidden rounded-t-xl bg-gradient-to-br from-primary-100 to-primary-50">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Leaf className="h-24 w-24 text-primary-300" />
-          </div>
+        <div className="relative h-48 -mx-6 -mt-6 mb-4 overflow-hidden rounded-t-xl">
+          <img
+            src={farm.image}
+            alt={farm.name}
+            className="w-full h-full object-cover"
+          />
           <div className="absolute top-3 right-3 bg-white px-2 py-1 rounded-full text-sm font-medium text-primary-700">
             {availabilityPercentage}% Available
           </div>
