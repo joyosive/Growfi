@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-
+import "./globals.css";
+import { WalletProvider } from "@/lib/walletContext";
+import Navbar from "@/components/Navbar";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -17,9 +19,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
+        <WalletProvider>
+          <Navbar />
           <main className="min-h-screen bg-neutral-50">
             {children}
           </main>
+        </WalletProvider>
       </body>
     </html>
   );
