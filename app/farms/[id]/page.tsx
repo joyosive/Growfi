@@ -5,14 +5,15 @@ import { useParams, useRouter } from 'next/navigation';
 import { torontoFarms, availablePlants } from '@/lib/mockData';
 import PlantCard from '@/components/PlantCard';
 import FarmPlotSelector from '@/components/FarmPlotSelector';
-import { MapPin, Leaf, ArrowLeft, Grid, List } from 'lucide-react';
+import MPTPurchaseInterface from '@/components/MPTPurchaseInterface';
+import { MapPin, Leaf, ArrowLeft, Grid, List, Coins } from 'lucide-react';
 import Link from 'next/link';
 
 const FarmDetailPage = () => {
   const params = useParams();
   const router = useRouter();
   const farmId = params.id as string;
-  const [viewMode, setViewMode] = useState<'plots' | 'plants'>('plots');
+  const [viewMode, setViewMode] = useState<'plots' | 'plants' | 'mpt'>('mpt');
 
   const farm = torontoFarms.find(f => f.id === farmId);
   const farmPlants = availablePlants.filter(p => p.farmId === farmId);
@@ -100,6 +101,17 @@ const FarmDetailPage = () => {
         </h2>
         <div className="flex bg-neutral-100 rounded-lg p-1">
           <button
+            onClick={() => setViewMode('mpt')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              viewMode === 'mpt'
+                ? 'bg-white text-neutral-900 shadow-sm'
+                : 'text-neutral-600 hover:text-neutral-900'
+            }`}
+          >
+            <Coins className="h-4 w-4" />
+            Buy MPT Tokens
+          </button>
+          <button
             onClick={() => setViewMode('plots')}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
               viewMode === 'plots'
@@ -125,9 +137,12 @@ const FarmDetailPage = () => {
       </div>
 
       {/* Content based on view mode */}
-      {viewMode === 'plots' ? (
+      {viewMode === 'mpt' ? (
+        <MPTPurchaseInterface farmName={farm.name} farmId={farmId} />
+      ) : viewMode === 'plots' ? (
         <FarmPlotSelector
           farmName={farm.name}
+          farmId={farmId}
           totalPlots={farm.totalPlots}
           availablePlots={farm.availablePlots}
           onPlotSelect={(plots) => {
