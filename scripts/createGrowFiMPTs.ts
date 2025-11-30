@@ -271,8 +271,8 @@ async function main() {
   console.log(`🌐 Network: ${network.toUpperCase()}`);
   console.log(`🔗 WebSocket: ${wssUrl}`);
 
-  // Create wallet from seed
-  const wallet = xrpl.Wallet.fromSeed(issuerSeed);
+  // Create wallet from seed using ED25519 algorithm (GemWallet compatible)
+  const wallet = xrpl.Wallet.fromSeed(issuerSeed, { algorithm: 'ed25519' });
   console.log(`💰 Issuer Wallet: ${wallet.classicAddress}`);
 
   // Connect to XRPL

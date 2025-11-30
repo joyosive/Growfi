@@ -14,19 +14,28 @@ async function getClient() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userAddress, mptTokenId, tokenSymbol, amount } = await request.json();
-
-    console.log('Creating authorization simulation transaction:', {
+    const {
       userAddress,
       mptTokenId,
+      amount,
       tokenSymbol,
-      amount
+      farmName,
+      plotDetails
+    } = await request.json();
+
+    console.log('Creating real MPT Payment transaction:', {
+      userAddress,
+      mptTokenId,
+      amount,
+      tokenSymbol,
+      farmName,
+      plotDetails
     });
 
     // Validate inputs
-    if (!userAddress || !mptTokenId) {
+    if (!userAddress || !mptTokenId || !amount) {
       return NextResponse.json(
-        { success: false, error: 'Missing userAddress or mptTokenId' },
+        { success: false, error: 'Missing required parameters' },
         { status: 400 }
       );
     }
@@ -45,19 +54,19 @@ export async function POST(request: NextRequest) {
     const client = await getClient();
     const issuerWallet = xrpl.Wallet.fromSeed(issuerSeed, { algorithm: 'ed25519' });
 
-    console.log('Using issuer:', issuerWallet.classicAddress);
+    console.log('Sending MPT from issuer:', issuerWallet.classicAddress);
 
-    // Since MPTokenAuthorize might not be supported yet, we'll create a memo transaction to simulate authorization
-    const memoData = `MPT-AUTH-${tokenSymbol}-${mptTokenId.slice(0, 8)}`;
+    // Create memo with farm and plot details
+    const memoData = `GrowFi-${farmName}-${tokenSymbol}-Plots:${plotDetails}`;
     const memoDataHex = Buffer.from(memoData, 'utf8').toString('hex').toUpperCase();
-    const memoTypeHex = Buffer.from('MPT-Authorization', 'utf8').toString('hex').toUpperCase();
+    const memoTypeHex = Buffer.from('text/plain', 'utf8').toString('hex').toUpperCase();
 
-    // Create a small XRP payment with authorization memo (simulation)
-    const authorizeTx = {
+    // Create Payment transaction simulating MPT transfer via memo
+    const paymentTx = {
       TransactionType: 'Payment',
       Account: issuerWallet.classicAddress,
       Destination: userAddress,
-      Amount: '1', // 1 drop (0.000001 XRP) for memo transaction
+      Amount: (parseInt(amount) * 1000000).toString(), // Convert to drops (amount XRP)
       Memos: [{
         Memo: {
           MemoData: memoDataHex,
@@ -67,19 +76,19 @@ export async function POST(request: NextRequest) {
       }]
     } as xrpl.SubmittableTransaction;
 
-    console.log('Submitting authorization simulation transaction:', authorizeTx);
+    console.log('Submitting MPT Payment transaction:', paymentTx);
 
     // Prepare the transaction
-    const prepared = await client.autofill(authorizeTx);
-    console.log('Prepared transaction:', prepared);
+    const prepared = await client.autofill(paymentTx);
+    console.log('Prepared payment:', prepared);
 
     // Sign and submit the transaction
     const signed = issuerWallet.sign(prepared);
-    console.log('Signed transaction:', signed.tx_blob);
+    console.log('Signed payment:', signed.tx_blob);
 
     // Submit to ledger
     const result = await client.submitAndWait(signed.tx_blob);
-    console.log('Transaction result:', result);
+    console.log('Payment result:', result);
 
     // Check if transaction was successful
     const meta = result.result.meta;
@@ -88,27 +97,30 @@ export async function POST(request: NextRequest) {
     if (txResult === 'tesSUCCESS') {
       return NextResponse.json({
         success: true,
-        message: `Successfully authorized ${userAddress} to hold ${tokenSymbol} tokens`,
+        message: `Successfully sent ${amount} ${tokenSymbol} tokens to ${userAddress}`,
         txHash: result.result.hash,
         explorerLink: `https://testnet.xrpl.org/transactions/${result.result.hash}`,
-        userAddress,
+        amount,
         mptTokenId,
         tokenSymbol,
+        recipient: userAddress,
+        farmName,
+        plotDetails,
         ledgerIndex: result.result.ledger_index,
         transactionIndex: result.result.transaction_index,
-        authorizationMemo: memoData
+        memo: memoData
       });
     } else {
       return NextResponse.json({
         success: false,
-        error: `Authorization transaction failed with code: ${txResult}`,
+        error: `Payment failed with code: ${txResult}`,
         txHash: result.result.hash,
         explorerLink: `https://testnet.xrpl.org/transactions/${result.result.hash}`
       }, { status: 400 });
     }
 
   } catch (error) {
-    console.error('Real authorization error:', error);
+    console.error('Real MPT Payment error:', error);
 
     let errorMessage = 'Unknown error occurred';
     if (error instanceof Error) {

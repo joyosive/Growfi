@@ -68,14 +68,23 @@ const MPTPurchaseInterface: React.FC<MPTPurchaseInterfaceProps> = ({ farmName, f
     setError(null);
 
     try {
-      const response = await fetch('/api/mpt/authorize', {
+      // Add timeout to prevent infinite loading
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+      const response = await fetch('/api/mpt/real-authorize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userAddress: userWallet,
-          mptTokenId: farmToken.tokenId
-        })
+          mptTokenId: farmToken.tokenId,
+          tokenSymbol: farmToken.symbol,
+          amount: purchaseAmount
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       const result = await response.json();
 
@@ -87,7 +96,11 @@ const MPTPurchaseInterface: React.FC<MPTPurchaseInterfaceProps> = ({ farmName, f
       }
     } catch (error) {
       console.error('Authorization error:', error);
-      setError('Failed to authorize user. Please try again.');
+      if (error.name === 'AbortError') {
+        setError('Request timed out. Please check your connection and try again.');
+      } else {
+        setError('Failed to authorize user. Please try again.');
+      }
     } finally {
       setIsAuthorizing(false);
     }
@@ -100,21 +113,25 @@ const MPTPurchaseInterface: React.FC<MPTPurchaseInterfaceProps> = ({ farmName, f
     setError(null);
 
     try {
-      // Simulate XRP payment hash (in real implementation, this would come from actual XRP payment)
-      const mockXrpTxHash = `XRP${Date.now()}${Math.random().toString(36).substr(2, 9)}`;
+      // Add timeout to prevent infinite loading
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 second timeout
 
-      const response = await fetch('/api/mpt/purchase', {
+      const response = await fetch('/api/mpt/real-purchase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userAddress: userWallet,
           mptTokenId: farmToken.tokenId,
           amount: purchaseAmount.toString(),
+          tokenSymbol: farmToken.symbol,
           farmName,
-          plotDetails: `${purchaseAmount} plots`,
-          xrpPaymentHash: mockXrpTxHash
-        })
+          plotDetails: `${purchaseAmount} plots`
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       const result = await response.json();
 
@@ -126,7 +143,11 @@ const MPTPurchaseInterface: React.FC<MPTPurchaseInterfaceProps> = ({ farmName, f
       }
     } catch (error) {
       console.error('Purchase error:', error);
-      setError('Failed to complete purchase. Please try again.');
+      if (error.name === 'AbortError') {
+        setError('Transaction timed out. Please check XRPL testnet status and try again.');
+      } else {
+        setError('Failed to complete purchase. Please try again.');
+      }
     } finally {
       setIsPurchasing(false);
     }
@@ -329,10 +350,10 @@ const MPTPurchaseInterface: React.FC<MPTPurchaseInterfaceProps> = ({ farmName, f
       <div className="mt-8 pt-6 border-t border-neutral-200">
         <h4 className="font-medium text-neutral-900 mb-2">Token Issuer</h4>
         <p className="text-sm text-neutral-600">
-          Issuer: <span className="font-mono text-xs">rBWTUHDH2GAqQtHfNJZd4CaCs5fxppwRaH</span>
+          Issuer: <span className="font-mono text-xs">radxtNHYtZKC5jvF27Jj9GBi2nj4Lbht2e</span>
         </p>
         <a
-          href="https://testnet.xrpl.org/accounts/rBWTUHDH2GAqQtHfNJZd4CaCs5fxppwRaH"
+          href="https://testnet.xrpl.org/accounts/radxtNHYtZKC5jvF27Jj9GBi2nj4Lbht2e"
           target="_blank"
           rel="noopener noreferrer"
           className="text-sm text-blue-600 hover:underline flex items-center gap-1 mt-1"

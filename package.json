@@ -21,6 +21,7 @@
     "recharts": "^3.5.1",
     "tsx": "^4.20.6",
     "xrpl": "^4.4.3",
+    "xrpl-connect": "^0.4.0",
     "xumm": "^1.0.0"
   },
   "devDependencies": {

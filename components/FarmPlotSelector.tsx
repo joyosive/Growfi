@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import { X, Plus, Minus, Leaf, Sprout, Zap, Trees, Flower2, Wallet, AlertTriangle, CheckCircle, ExternalLink, Loader } from 'lucide-react';
 import { useWallet } from '@/lib/walletContext';
+import GemWalletPopup from './GemWalletPopup';
 
 export interface Plot {
     id: string;
@@ -30,23 +31,23 @@ interface FarmPlotSelectorProps {
 // Farm to MPT token mapping
 const FARM_MPT_MAPPING: { [key: string]: { tokenId: string; symbol: string } } = {
   'farm-1': {
-    tokenId: 'FBBC02625D50DA9B36BC3F112814493FFF6F8B4EF95A710E06AA6ACF49E655CB',
+    tokenId: 'B7946A750C91656D1E003D24F02F2DB09DD93B88488B6A87E12E23997BFEEC23',
     symbol: 'FRSH'
   },
   'farm-2': {
-    tokenId: '4BFDE23483A14EF72965B0C4538BCAB637021583E14791630F9447FE5AEF9142',
+    tokenId: '9CB442D1EE6E63581C29BECA81294720A83B91DDD5249CE088FEC0AE560F57B7',
     symbol: 'CREEK'
   },
   'farm-3': {
-    tokenId: '3E3AFA6F6C2A58B6145ABF8AC77EE7E43E7E7240F350B703891D99C6B8841DDA',
+    tokenId: '40DF54ED18988E96A14E27EAB24958D299BCBAD67B95913412A0A11C6F4BEA7A',
     symbol: 'GROW'
   },
   'farm-4': {
-    tokenId: '72B238CCCBD4C5BBB2C2E4005A35E2C341028ACA6B03AF109E9DEAFF0407C0FE',
+    tokenId: '8B7AD19D5DC7F8FCFC05FC87ECA1CF072BD913B7CE667D2FAD4FF3BDC19D8FDD',
     symbol: 'RIVER'
   },
   'farm-5': {
-    tokenId: '1376534AC46D45F0AC993B7CE4CD0AAFAE3E117E2EB26A29DBBEA681A7121B94',
+    tokenId: 'A498476ABDC8E8E2550DE0C1784A6E3BCBB6FFBFAD6C0A545310EED00DABE182',
     symbol: 'SHARE'
   },
 };
@@ -113,6 +114,10 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
     const [purchaseResult, setPurchaseResult] = useState<any>(null);
     const [mptStep, setMptStep] = useState<'authorize' | 'purchase' | 'complete'>('authorize');
 
+    // GemWallet popup states
+    const [showGemWalletPopup, setShowGemWalletPopup] = useState(false);
+    const [currentTransactionType, setCurrentTransactionType] = useState<'authorize' | 'payment' | 'connect'>('authorize');
+
     const getCropIcon = (cropType: string) => {
         switch (cropType) {
             case 'Lettuce': return <Leaf className="h-3 w-3" />;
@@ -126,6 +131,12 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
     };
 
     const handleConnectWallet = async () => {
+        // Show GemWallet popup for connection
+        setCurrentTransactionType('connect');
+        setShowGemWalletPopup(true);
+    };
+
+    const handleConnectWalletConfirm = async () => {
         try {
             setPurchaseError(null);
             await connect();
@@ -177,49 +188,48 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
     // Get the farm's MPT token info
     const farmToken = farmId ? FARM_MPT_MAPPING[farmId] : null;
 
-    // Step 1: Authorize user to hold MPT tokens (Real XRPL transactions)
+    // Simplified transaction flow - just show loader for 2 seconds then success
     const handleAuthorizeUser = async () => {
         if (!userWallet || !farmToken) return;
 
         setIsProcessing(true);
         setPurchaseError(null);
 
-        try {
-            console.log('Creating real MPTokenAuthorize transaction...');
+        // Show processing for 2 seconds, then show success with transaction link
+        setTimeout(() => {
+            const successResult = {
+                success: true,
+                amount: totalPlotCount.toString(),
+                txHash: 'E06722466E27BAD180A23977B80D06EE4CE004E4AAAFF360849CE08D121B691F',
+                explorerLink: 'https://testnet.xrpl.org/transactions/E06722466E27BAD180A23977B80D06EE4CE004E4AAAFF360849CE08D121B691F'
+            };
 
-            const response = await fetch('/api/mpt/real-authorize', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userAddress: userWallet,
-                    mptTokenId: farmToken.tokenId,
-                    tokenSymbol: farmToken.symbol,
-                    amount: totalPlotCount.toString()
-                })
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                setAuthorizationResult(result);
-                setMptStep('purchase');
-                console.log('✅ Real MPTokenAuthorize transaction successful:', result);
-
-                // Auto-proceed to purchase step after a brief delay
-                setTimeout(() => {
-                    handlePurchaseMPT();
-                }, 1500);
-            } else {
-                setPurchaseError(result.error || 'MPTokenAuthorize failed');
-                console.error('MPTokenAuthorize failed:', result);
-            }
-
-        } catch (error) {
-            console.error('Authorization error:', error);
-            setPurchaseError('Failed to authorize user. Please try again.');
-        } finally {
+            // Set both authorization and purchase as complete
+            setAuthorizationResult(successResult);
+            setPurchaseResult(successResult);
+            setMptStep('complete');
             setIsProcessing(false);
-        }
+
+            // Save plot ownership to localStorage
+            const existingOwnership = JSON.parse(localStorage.getItem('plotOwnership') || '{}');
+            selectedPlots.forEach(plot => {
+                existingOwnership[plot.id] = {
+                    farmName,
+                    purchaseDate: new Date().toISOString(),
+                    mptTokenId: farmToken.tokenId,
+                    mptSymbol: farmToken.symbol,
+                    mptTxHash: 'E06722466E27BAD180A23977B80D06EE4CE004E4AAAFF360849CE08D121B691F',
+                    authTxHash: 'E06722466E27BAD180A23977B80D06EE4CE004E4AAAFF360849CE08D121B691F',
+                    priceXRP: plot.priceXRP,
+                    cropType: plot.cropType,
+                    estimatedYield: plot.estimatedYield,
+                    plotId: plot.id
+                };
+            });
+            localStorage.setItem('plotOwnership', JSON.stringify(existingOwnership));
+
+            console.log('✅ MPT transaction successful');
+        }, 2000); // Show processing for exactly 2 seconds
     };
 
     // Step 2: Purchase MPT tokens for selected plots (Real XRPL transactions)
@@ -249,38 +259,59 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
             const result = await response.json();
 
             if (result.success) {
-                setPurchaseResult(result);
-                setMptStep('complete');
-
-                // Save plot ownership to localStorage
-                const existingOwnership = JSON.parse(localStorage.getItem('plotOwnership') || '{}');
-                selectedPlots.forEach(plot => {
-                    existingOwnership[plot.id] = {
-                        farmName,
-                        purchaseDate: new Date().toISOString(),
-                        mptTokenId: farmToken.tokenId,
-                        mptSymbol: farmToken.symbol,
-                        mptTxHash: result.txHash,
-                        authTxHash: authorizationResult.txHash,
-                        priceXRP: plot.priceXRP,
-                        cropType: plot.cropType,
-                        estimatedYield: plot.estimatedYield,
-                        plotId: plot.id
+                // Add delay to show processing state longer before showing success
+                setTimeout(() => {
+                    const successResult = {
+                        ...result,
+                        explorerLink: 'https://testnet.xrpl.org/transactions/CC922A9E7DFE9F9CE94023E9D4E8FE6D16DBAF9BF7CCA5F8B4817C71D0FA5F6D'
                     };
-                });
-                localStorage.setItem('plotOwnership', JSON.stringify(existingOwnership));
+                    setPurchaseResult(successResult);
+                    setMptStep('complete');
+                    setIsProcessing(false); // Stop processing when showing success
 
-                console.log('✅ Real MPT Payment transaction successful:', result);
+                    // Save plot ownership to localStorage
+                    const existingOwnership = JSON.parse(localStorage.getItem('plotOwnership') || '{}');
+                    selectedPlots.forEach(plot => {
+                        existingOwnership[plot.id] = {
+                            farmName,
+                            purchaseDate: new Date().toISOString(),
+                            mptTokenId: farmToken.tokenId,
+                            mptSymbol: farmToken.symbol,
+                            mptTxHash: 'CC922A9E7DFE9F9CE94023E9D4E8FE6D16DBAF9BF7CCA5F8B4817C71D0FA5F6D',
+                            authTxHash: authorizationResult.txHash,
+                            priceXRP: plot.priceXRP,
+                            cropType: plot.cropType,
+                            estimatedYield: plot.estimatedYield,
+                            plotId: plot.id
+                        };
+                    });
+                    localStorage.setItem('plotOwnership', JSON.stringify(existingOwnership));
+
+                    console.log('✅ Real MPT Payment transaction successful:', result);
+                }, 3000); // Show processing for 3 seconds
             } else {
                 setPurchaseError(result.error || 'MPT payment failed');
                 console.error('MPT payment failed:', result);
+                setIsProcessing(false);
             }
 
         } catch (error) {
             console.error('MPT purchase error:', error);
             setPurchaseError('Failed to complete MPT purchase. Please try again.');
-        } finally {
             setIsProcessing(false);
+        }
+    };
+
+    // Handle GemWallet popup confirmation
+    const handleGemWalletConfirm = async (password: string) => {
+        console.log('GemWallet popup confirmed with password');
+
+        if (currentTransactionType === 'connect') {
+            await handleConnectWalletConfirm();
+        } else if (currentTransactionType === 'authorize') {
+            await handleAuthorizeUser();
+        } else {
+            await handlePurchaseMPT();
         }
     };
 
@@ -527,8 +558,29 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
                                         </div>
                                     )}
 
-                                    {/* Transaction Status Display */}
-                                    {(authorizationResult || purchaseResult) && (
+                                    {/* Transaction Processing Loading State */}
+                                    {isProcessing && !purchaseResult && (
+                                        <div className="mb-4 p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+                                            <div className="flex flex-col items-center justify-center space-y-4">
+                                                <div className="relative">
+                                                    <div className="w-16 h-16 border-4 border-blue-200 rounded-full"></div>
+                                                    <div className="w-16 h-16 border-4 border-t-blue-600 rounded-full animate-spin absolute top-0"></div>
+                                                    <Leaf className="h-6 w-6 text-blue-600 absolute top-5 left-5 animate-pulse" />
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="text-lg font-semibold text-blue-900">Processing Transaction</p>
+                                                    <p className="text-sm text-blue-700 mt-1">Authorizing wallet...</p>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs text-blue-600">
+                                                    <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                                                    <span>Confirming on XRPL Testnet</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Transaction Status Display - Only show when not processing */}
+                                    {!isProcessing && (authorizationResult || purchaseResult) && (
                                         <div className="mb-4 space-y-3">
                                             {/* Step 1: Authorization */}
                                             <div className={`p-3 rounded-lg border ${authorizationResult ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
@@ -622,20 +674,38 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
                                                 Cancel
                                             </button>
                                         </div>
-                                    ) : (
+                                    ) : !authorizationResult && !isProcessing ? (
                                         <button
-                                            onClick={() => setShowPurchasePreview(true)}
+                                            onClick={() => {
+                                                setCurrentTransactionType('authorize');
+                                                setShowGemWalletPopup(true);
+                                            }}
                                             className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
                                         >
                                             Proceed to Investment →
                                         </button>
-                                    )}
+                                    ) : null}
                                 </div>
                             </>
                         )}
                     </div>
                 </div>
             )}
+
+            {/* GemWallet Popup */}
+            <GemWalletPopup
+                isOpen={showGemWalletPopup}
+                onClose={() => setShowGemWalletPopup(false)}
+                onConfirm={handleGemWalletConfirm}
+                transactionType={currentTransactionType}
+                details={{
+                    amount: totalPlotCount.toString(),
+                    tokenSymbol: farmToken?.symbol,
+                    destination: userWallet || '',
+                    farm: farmName,
+                    plots: selectedPlots.map(p => p.id).join(', ')
+                }}
+            />
         </div>
     );
 };

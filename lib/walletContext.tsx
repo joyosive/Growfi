@@ -1,8 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { getAddress, getNetwork, getBalance, requestPayment, isInstalled } from '@gemwallet/api';
+import { WalletManager, GemWalletAdapter, XamanAdapter, CrossmarkAdapter } from 'xrpl-connect';
 import { Payment } from 'xrpl';
+import { X, Wallet } from 'lucide-react';
 
 interface WalletContextType {
   userWallet: string | null;
@@ -11,14 +12,93 @@ interface WalletContextType {
   balance: string | null;
   network: string | null;
   error: string | null;
+  walletManager: WalletManager | null;
+  showWalletSelector: boolean;
+  availableWallets: Array<{ id: string; name: string; icon: string }>;
   connect: () => Promise<void>;
+  connectWithWallet: (walletId: string) => Promise<void>;
   disconnect: () => void;
+  closeWalletSelector: () => void;
   sendPayment: (destination: string, amount: string, memo?: string) => Promise<any>;
   mintNFT: (tokenTaxon: number, metadata: any) => Promise<any>;
   refreshBalance: () => Promise<void>;
+  signTransaction: (transaction: any) => Promise<any>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
+
+// Wallet Selector Modal Component
+const WalletSelectorModal: React.FC = () => {
+  const { availableWallets, connectWithWallet, closeWalletSelector, isConnecting, error } = useWallet();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={closeWalletSelector}
+      />
+
+      {/* Modal */}
+      <div className="relative bg-white rounded-xl shadow-2xl border border-gray-200 max-w-md w-full mx-4">
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">Connect Wallet</h3>
+          <button
+            onClick={closeWalletSelector}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          <p className="text-sm text-gray-600 mb-6">
+            Choose your preferred wallet to connect to GrowFi
+          </p>
+
+          {/* Error Display */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
+
+          {/* Wallet Options */}
+          <div className="space-y-3">
+            {availableWallets.map((wallet) => (
+              <button
+                key={wallet.id}
+                onClick={() => connectWithWallet(wallet.id)}
+                disabled={isConnecting}
+                className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="text-2xl">{wallet.icon}</span>
+                <div className="flex-1 text-left">
+                  <div className="font-medium text-gray-900">{wallet.name}</div>
+                  <div className="text-sm text-gray-600">
+                    Connect using {wallet.name} extension
+                  </div>
+                </div>
+                <Wallet className="h-5 w-5 text-gray-400" />
+              </button>
+            ))}
+          </div>
+
+          {isConnecting && (
+            <div className="mt-4 text-center">
+              <div className="inline-flex items-center gap-2 text-sm text-gray-600">
+                <div className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+                Connecting...
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // XRP Testnet Configuration
 const TESTNET_CONFIG = {
@@ -35,6 +115,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [balance, setBalance] = useState<string | null>(null);
   const [network, setNetwork] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [walletManager, setWalletManager] = useState<WalletManager | null>(null);
+  const [showWalletSelector, setShowWalletSelector] = useState(false);
+
+  const availableWallets = [
+    { id: 'gemwallet', name: 'GemWallet', icon: '💎' },
+    { id: 'xaman', name: 'Xaman', icon: '🟣' },
+    { id: 'crossmark', name: 'Crossmark', icon: '✖️' }
+  ];
 
   const connect = useCallback(async () => {
     // If already connected, don't need to reconnect
@@ -43,8 +131,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Show wallet selector dialog
+    setError(null);
+    setShowWalletSelector(true);
+  }, [isConnected, userWallet]);
+
+  const closeWalletSelector = useCallback(() => {
+    setShowWalletSelector(false);
+  }, []);
+
+  // Helper function to refresh balance for a given address
+  const refreshBalanceForAddress = useCallback(async (address: string) => {
+    try {
+      if (walletManager && walletManager.account) {
+        const balanceInfo = await walletManager.getBalance();
+        setBalance(balanceInfo?.balance || '0');
+        console.log('Balance updated:', balanceInfo?.balance);
+      }
+    } catch (error) {
+      console.error('Error refreshing balance:', error);
+      setBalance('0');
+    }
+  }, [walletManager]);
+
+  const connectWithWallet = useCallback(async (walletId: string) => {
     setIsConnecting(true);
     setError(null);
+    setShowWalletSelector(false);
 
     try {
       // Check if in browser environment
@@ -52,44 +165,55 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Not in browser environment');
       }
 
-      console.log('Attempting to connect to GemWallet...');
+      console.log(`Initializing wallet manager for ${walletId}...`);
 
-      // Connect to GemWallet directly - let the API handle detection
-      const response = await getAddress();
+      // Initialize wallet manager with multiple adapters
+      const manager = new WalletManager({
+        adapters: [
+          new GemWalletAdapter(),
+          new XamanAdapter(),
+          new CrossmarkAdapter()
+        ],
+        network: 'testnet',
+        autoConnect: false
+      });
 
-      if (response.type === 'response' && response.result) {
-        const { address } = response.result;
-        console.log('Connected to GemWallet:', address);
+      setWalletManager(manager);
 
-        // Get network and balance sequentially to avoid race conditions
-        try {
-          const networkResult = await getNetwork();
-          const balanceResult = await getBalance(address);
-
-          const networkValue = networkResult.type === 'response' ? networkResult.result?.network || 'testnet' : 'testnet';
-          const balanceValue = balanceResult.type === 'response' ? balanceResult.result?.balance || '0' : '0';
-
-          setNetwork(networkValue);
-          setBalance(balanceValue);
-        } catch (err) {
-          console.warn('Could not fetch network/balance:', err);
-          setNetwork('testnet');
-          setBalance('0');
-        }
-
-        setUserWallet(address);
+      // Set up event listeners
+      manager.on('connect', (account: any) => {
+        console.log('Wallet connected:', account.address);
+        setUserWallet(account.address);
         setIsConnected(true);
-        setError(null); // Clear any previous errors
-        localStorage.setItem('userWallet', address);
-        console.log('Wallet connected successfully');
-      } else {
-        const errorMessage = response.type === 'reject' && response.result?.error
-          ? response.result.error
-          : 'Connection was rejected or failed';
-        throw new Error(errorMessage);
-      }
+        setError(null);
+        setNetwork('testnet');
+        localStorage.setItem('userWallet', account.address);
+
+        // Get initial balance
+        refreshBalanceForAddress(account.address);
+      });
+
+      manager.on('disconnect', () => {
+        console.log('Wallet disconnected');
+        setUserWallet(null);
+        setIsConnected(false);
+        setBalance(null);
+        setError(null);
+        localStorage.removeItem('userWallet');
+      });
+
+      manager.on('error', (error: any) => {
+        console.error('Wallet error:', error);
+        setError(error.message || 'Wallet connection failed');
+        setIsConnected(false);
+        setUserWallet(null);
+      });
+
+      // Attempt to connect to specific wallet
+      await manager.connect(walletId);
+
     } catch (error: any) {
-      console.error('GemWallet connection error:', error);
+      console.error('Wallet connection error:', error);
 
       let errorMessage = 'Failed to connect wallet';
 
@@ -99,97 +223,110 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         errorMessage = error;
       }
 
-      // Check if this is a "GemWallet not found" error
-      if (error?.message?.includes('GemWallet needs to be installed') ||
-          error?.message?.includes('Please check if GemWallet is installed') ||
-          error?.message?.includes('gemwallet is not defined') ||
-          error?.code === 'GEMWALLET_NOT_FOUND') {
-        errorMessage = 'GemWallet extension not found. Please install GemWallet from: https://gemwallet.app';
+      // Check for specific error types
+      if (errorMessage.includes('No wallet found') || errorMessage.includes('not installed')) {
+        errorMessage = `${walletId} wallet not found. Please install the wallet extension.`;
       } else if (errorMessage.includes('rejected') || errorMessage.includes('denied')) {
         errorMessage = 'Connection was rejected by user';
-      } else if (errorMessage === 'Failed to connect wallet') {
-        // Generic error, might be extension not installed
-        errorMessage = 'Unable to connect to GemWallet. Please ensure the extension is installed and enabled.';
       }
 
       setError(errorMessage);
       setIsConnected(false);
       setUserWallet(null);
+      setWalletManager(null);
       localStorage.removeItem('userWallet');
+      setShowWalletSelector(true); // Show selector again on error
     } finally {
       setIsConnecting(false);
     }
-  }, [isConnected, userWallet]);
+  }, [refreshBalanceForAddress]);
 
   const disconnect = useCallback(() => {
+    if (walletManager) {
+      walletManager.disconnect();
+    }
+
     setUserWallet(null);
     setIsConnected(false);
     setBalance(null);
     setNetwork(null);
     setError(null);
+    setWalletManager(null);
     localStorage.removeItem('userWallet');
     console.log('Wallet disconnected');
-  }, []);
+  }, [walletManager]);
 
   const refreshBalance = useCallback(async () => {
-    if (isConnected && userWallet) {
-      try {
-        console.log('Refreshing balance...');
-        const balanceResult = await getBalance(userWallet);
-        const balanceValue = balanceResult.type === 'response' ? balanceResult.result?.balance || '0' : '0';
-        setBalance(balanceValue);
-        console.log('Balance updated:', balanceValue);
-      } catch (error) {
-        console.error('Error refreshing balance:', error);
-      }
+    if (isConnected && userWallet && walletManager) {
+      await refreshBalanceForAddress(userWallet);
     }
-  }, [isConnected, userWallet]);
+  }, [isConnected, userWallet, walletManager, refreshBalanceForAddress]);
 
   const sendPayment = useCallback(async (destination: string, amount: string, memo?: string) => {
-    if (!userWallet || !isConnected) {
+    if (!userWallet || !isConnected || !walletManager) {
       throw new Error('Wallet not connected');
     }
 
     try {
-      const paymentRequest = {
-        amount,
-        destination,
+      const transaction = {
+        TransactionType: 'Payment',
+        Account: userWallet,
+        Destination: destination,
+        Amount: amount,
         ...(memo && {
-          memos: [{
-            memo: {
-              memoData: Buffer.from(memo, 'utf8').toString('hex').toUpperCase(),
-              memoType: Buffer.from('text/plain', 'utf8').toString('hex').toUpperCase(),
+          Memos: [{
+            Memo: {
+              MemoData: Buffer.from(memo, 'utf8').toString('hex').toUpperCase(),
+              MemoType: Buffer.from('text/plain', 'utf8').toString('hex').toUpperCase(),
             }
           }]
         })
       };
 
-      console.log('Sending payment:', paymentRequest);
-      const response = await requestPayment(paymentRequest);
+      console.log('Sending payment:', transaction);
+      const signedTransaction = await walletManager.sign(transaction);
 
-      if (response.type === 'response' && response.result) {
-        console.log('Payment successful:', response.result);
+      if (signedTransaction) {
+        console.log('Payment successful:', signedTransaction);
 
         // Refresh balance after payment
         setTimeout(() => refreshBalance(), 1000);
 
         return {
           success: true,
-          hash: response.result.hash,
-          txHash: response.result.hash, // Add both for compatibility
-          ...response.result
+          hash: signedTransaction.hash,
+          txHash: signedTransaction.hash,
+          ...signedTransaction
         };
       } else {
-        const errorMsg = response.type === 'reject' && response.result?.error
-          ? response.result.error
-          : 'Payment was rejected or failed';
-        throw new Error(errorMsg);
+        throw new Error('Payment was rejected or failed');
       }
     } catch (error) {
       console.error('Payment error:', error);
       throw error;
     }
-  }, [userWallet, isConnected, refreshBalance]);
+  }, [userWallet, isConnected, walletManager, refreshBalance]);
+
+  const signTransaction = useCallback(async (transaction: any) => {
+    if (!userWallet || !isConnected || !walletManager) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      console.log('Signing transaction:', transaction);
+      const signedTransaction = await walletManager.sign(transaction);
+
+      if (signedTransaction) {
+        console.log('Transaction signed successfully:', signedTransaction);
+        return signedTransaction;
+      } else {
+        throw new Error('Transaction signing was rejected or failed');
+      }
+    } catch (error) {
+      console.error('Transaction signing error:', error);
+      throw error;
+    }
+  }, [userWallet, isConnected, walletManager]);
 
   const mintNFT = useCallback(async (tokenTaxon: number, metadata: any) => {
     if (!userWallet) {
@@ -217,35 +354,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedWallet = localStorage.getItem('userWallet');
     if (savedWallet && savedWallet.length > 0) {
-      console.log('Restoring wallet connection:', savedWallet);
-      setUserWallet(savedWallet);
-      setIsConnected(true);
-      setNetwork('testnet'); // Set default network
-      setBalance('0'); // Set default balance
+      console.log('Found saved wallet, attempting to restore connection:', savedWallet);
 
-      // Try to refresh balance and network info in background
-      const refreshWalletData = async () => {
-        try {
-          const networkResult = await getNetwork();
-          const balanceResult = await getBalance(savedWallet);
+      // Try to restore connection without auto-connecting
+      const manager = new WalletManager({
+        adapters: [
+          new GemWalletAdapter(),
+          new XamanAdapter(),
+          new CrossmarkAdapter()
+        ],
+        network: 'testnet',
+        autoConnect: false
+      });
 
-          if (networkResult.type === 'response') {
-            setNetwork(networkResult.result?.network || 'testnet');
-          }
+      setWalletManager(manager);
 
-          if (balanceResult.type === 'response') {
-            setBalance(balanceResult.result?.balance || '0');
-          }
-        } catch (error) {
-          console.warn('Could not refresh wallet data on restore:', error);
-          // Keep the wallet connected even if balance/network refresh fails
-        }
-      };
-
-      // Refresh data in background without blocking UI
-      refreshWalletData();
+      // Check if we can restore the session
+      if (manager.isConnected && manager.account?.address === savedWallet) {
+        setUserWallet(savedWallet);
+        setIsConnected(true);
+        setNetwork('testnet');
+        refreshBalanceForAddress(savedWallet);
+      } else {
+        // Clear invalid saved wallet
+        localStorage.removeItem('userWallet');
+      }
     }
-  }, []);
+  }, [refreshBalanceForAddress]);
 
   return (
     <WalletContext.Provider value={{
@@ -255,13 +390,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       balance,
       network,
       error,
+      walletManager,
+      showWalletSelector,
+      availableWallets,
       connect,
+      connectWithWallet,
       disconnect,
+      closeWalletSelector,
       sendPayment,
       mintNFT,
-      refreshBalance
+      refreshBalance,
+      signTransaction
     }}>
       {children}
+      {showWalletSelector && <WalletSelectorModal />}
     </WalletContext.Provider>
   );
 }
