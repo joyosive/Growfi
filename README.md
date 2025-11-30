@@ -91,12 +91,12 @@ sequenceDiagram
 - **Transaction Transparency**: All transactions viewable on XRPL explorer
 
 ### Core Features Implemented
-✅ Multi-farm marketplace with 5 active farms
-✅ XRPL MPT token creation and management
-✅ GemWallet integration for seamless payments
-✅ Real-time transaction processing
-✅ Plant selection and plot management
-✅ Impact tracking and sustainability metrics
+- Multi-farm marketplace with 5 active farms
+- XRPL MPT token creation and management
+- GemWallet integration for seamless payments
+- Real-time transaction processing
+- Plant selection and plot management
+- Impact tracking and sustainability metrics
 
 
 ## Project Structure
