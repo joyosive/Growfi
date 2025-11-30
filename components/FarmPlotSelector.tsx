@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { X, Plus, Minus, Leaf, Sprout, Zap, Trees, Flower2 } from 'lucide-react';
+import { X, Plus, Minus, Leaf, Sprout, Zap, Trees, Flower2, Wallet, AlertTriangle } from 'lucide-react';
+import { useWallet } from '@/lib/walletContext';
 
 export interface Plot {
     id: string;
@@ -31,18 +32,26 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
                                                                availablePlots,
                                                                onPlotSelect
                                                            }) => {
+    const { userWallet, isConnected, isConnecting, connect, sendPayment } = useWallet();
     // Generate plot layout for 4 towers, each with 8 levels and 6 racks per level
     const generatePlots = useCallback((): Plot[] => {
         const plots: Plot[] = [];
         const crops = ['Lettuce', 'Broccoli', 'Microgreens', 'Spinach', 'Kale', 'Herbs'];
         const racks = ['A', 'B', 'C', 'D', 'E', 'F'];
 
+        // Use seeded random to ensure consistent generation between server and client
+        let seed = 123456; // Fixed seed for consistent results
+        const seededRandom = () => {
+            seed = (seed * 9301 + 49297) % 233280;
+            return seed / 233280;
+        };
+
         for (let tower = 1; tower <= 4; tower++) {
             for (let level = 1; level <= 8; level++) {
                 for (let rackIdx = 0; rackIdx < racks.length; rackIdx++) {
                     const rack = racks[rackIdx];
                     const id = `T${tower}-L${level}-${rack}`;
-                    const randomStatus = Math.random();
+                    const randomStatus = seededRandom();
                     let status: Plot['status'] = 'available';
 
                     if (randomStatus > 0.75) status = 'occupied';
@@ -54,9 +63,9 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
                         level,
                         rack,
                         status,
-                        cropType: crops[Math.floor(Math.random() * crops.length)],
-                        priceXRP: Number((Math.random() * 15 + 10).toFixed(1)),
-                        estimatedYield: `${(Math.random() * 2 + 0.5).toFixed(1)}kg`
+                        cropType: crops[Math.floor(seededRandom() * crops.length)],
+                        priceXRP: Number((seededRandom() * 15 + 10).toFixed(1)),
+                        estimatedYield: `${(seededRandom() * 2 + 0.5).toFixed(1)}kg`
                     });
                 }
             }
@@ -69,6 +78,9 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
     const [selectedPlots, setSelectedPlots] = useState<CartItem[]>([]);
     const [showCart, setShowCart] = useState(false);
     const [hoveredPlot, setHoveredPlot] = useState<string | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [purchaseError, setPurchaseError] = useState<string | null>(null);
+    const [showPurchasePreview, setShowPurchasePreview] = useState(false);
 
     const getCropIcon = (cropType: string) => {
         switch (cropType) {
@@ -79,6 +91,16 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
             case 'Kale': return <Flower2 className="h-3 w-3" />;
             case 'Herbs': return <Sprout className="h-3 w-3" />;
             default: return <Leaf className="h-3 w-3" />;
+        }
+    };
+
+    const handleConnectWallet = async () => {
+        try {
+            setPurchaseError(null);
+            await connect();
+        } catch (error) {
+            console.error('Wallet connection failed:', error);
+            setPurchaseError(error instanceof Error ? error.message : 'Failed to connect wallet');
         }
     };
 
@@ -129,6 +151,73 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
 
     const totalXRP = selectedPlots.reduce((sum, item) => sum + (item.priceXRP * item.quantity), 0);
     const totalYield = selectedPlots.reduce((sum, item) => sum + (parseFloat(item.estimatedYield) * item.quantity), 0);
+
+    const handlePurchase = async () => {
+        if (!isConnected) {
+            setPurchaseError('Please connect your wallet first');
+            return;
+        }
+
+        if (selectedPlots.length === 0) return;
+
+        setIsProcessing(true);
+        setPurchaseError(null);
+
+        try {
+            // Convert XRP to drops (1 XRP = 1,000,000 drops)
+            const totalDrops = Math.floor(totalXRP * 1000000).toString();
+
+            // Get issuer address from environment
+            const issuerAddress = process.env.NEXT_PUBLIC_ISSUER_WALLET_ADDRESS || 'rLSZsVxBP2ZoJgGRqkyCwCs5eg7LaLPhkX';
+
+            // Create memo with plot details
+            const plotDetails = selectedPlots.map(p => `${p.id}:${p.quantity}`).join(',');
+            const memo = `GrowFi-${farmName}-Plots:${plotDetails}`;
+
+            console.log('Sending payment:', {
+                amount: totalDrops,
+                destination: issuerAddress,
+                memo: memo
+            });
+
+            const result = await sendPayment(issuerAddress, totalDrops, memo);
+
+            if (result.success) {
+                console.log('Payment successful!', result);
+
+                // Save plot ownership to localStorage
+                const existingOwnership = JSON.parse(localStorage.getItem('plotOwnership') || '{}');
+                selectedPlots.forEach(plot => {
+                    existingOwnership[plot.id] = {
+                        farmName,
+                        quantity: plot.quantity,
+                        purchaseDate: new Date().toISOString(),
+                        txHash: result.txHash,
+                        priceXRP: plot.priceXRP
+                    };
+                });
+                localStorage.setItem('plotOwnership', JSON.stringify(existingOwnership));
+
+                // Clear selection
+                setSelectedPlots([]);
+                setPlots(generatePlots());
+                setShowCart(false);
+                setShowPurchasePreview(false);
+
+                // Call parent callback
+                onPlotSelect?.([]);
+
+                alert(`Successfully purchased ${selectedPlots.reduce((sum, item) => sum + item.quantity, 0)} plots! Transaction hash: ${result.txHash}`);
+            } else {
+                throw new Error(result.error || 'Payment failed');
+            }
+        } catch (error) {
+            console.error('Purchase error:', error);
+            setPurchaseError(error instanceof Error ? error.message : 'Purchase failed');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
 
     const getPlotStyles = (plot: Plot) => {
         const baseStyles = "relative w-8 h-8 rounded-md border cursor-pointer transition-all duration-300 flex flex-col items-center justify-center text-xs font-medium";
@@ -357,12 +446,71 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
                                         </div>
                                     </div>
 
-                                    <button
-                                        onClick={() => onPlotSelect?.(selectedPlots)}
-                                        className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
-                                    >
-                                        Proceed to Investment →
-                                    </button>
+                                    {/* Error Display */}
+                                    {purchaseError && (
+                                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                            <div className="flex items-center gap-2 text-red-600">
+                                                <AlertTriangle className="h-4 w-4" />
+                                                <span className="text-sm">{purchaseError}</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Purchase Preview */}
+                                    {showPurchasePreview && (
+                                        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                            <h4 className="font-semibold text-blue-900 mb-2">Payment Details</h4>
+                                            <div className="text-sm text-blue-700 space-y-1">
+                                                <div>Recipient: {process.env.NEXT_PUBLIC_ISSUER_WALLET_ADDRESS?.slice(0, 10)}...</div>
+                                                <div>Amount: {totalXRP.toFixed(2)} XRP (≈ {(totalXRP * 1000000).toLocaleString()} drops)</div>
+                                                <div>For: {selectedPlots.reduce((sum, item) => sum + item.quantity, 0)} plots</div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {!isConnected ? (
+                                        <button
+                                            onClick={handleConnectWallet}
+                                            disabled={isConnecting}
+                                            className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                                        >
+                                            <Wallet className="h-5 w-5" />
+                                            {isConnecting ? 'Connecting...' : 'Connect Wallet to Purchase'}
+                                        </button>
+                                    ) : showPurchasePreview ? (
+                                        <div className="space-y-2">
+                                            <button
+                                                onClick={handlePurchase}
+                                                disabled={isProcessing}
+                                                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                                            >
+                                                {isProcessing ? (
+                                                    <>
+                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                        Processing...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Wallet className="h-5 w-5" />
+                                                        Confirm Purchase
+                                                    </>
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={() => setShowPurchasePreview(false)}
+                                                className="w-full text-slate-600 hover:text-slate-800 py-2 text-sm"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => setShowPurchasePreview(true)}
+                                            className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
+                                        >
+                                            Proceed to Investment →
+                                        </button>
+                                    )}
                                 </div>
                             </>
                         )}

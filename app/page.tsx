@@ -41,7 +41,7 @@ const ImpactMetric = ({ icon: Icon, value, label }: any) => (
 );
 
 export default function Home() {
-  const { isConnected, connect } = useWallet();
+  const { userWallet, isConnected, connect } = useWallet();
   const [featuredFarms, setFeaturedFarms] = useState(torontoFarms.slice(0, 3));
   const [featuredPlants, setFeaturedPlants] = useState(availablePlants.slice(0, 6));
 
