@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { X, Plus, Minus, Leaf, Sprout, Zap, Trees, Flower2, Wallet, AlertTriangle } from 'lucide-react';
+import { X, Plus, Minus, Leaf, Sprout, Zap, Trees, Flower2, Wallet, AlertTriangle, CheckCircle, ExternalLink, Loader } from 'lucide-react';
 import { useWallet } from '@/lib/walletContext';
 
 export interface Plot {
@@ -16,18 +16,44 @@ export interface Plot {
 }
 
 interface CartItem extends Plot {
-    quantity: number;
+    // Plots are binary
 }
 
 interface FarmPlotSelectorProps {
     farmName: string;
+    farmId?: string;
     totalPlots: number;
     availablePlots: number;
     onPlotSelect?: (plots: CartItem[]) => void;
 }
 
+// Farm to MPT token mapping
+const FARM_MPT_MAPPING: { [key: string]: { tokenId: string; symbol: string } } = {
+  'farm-1': {
+    tokenId: 'FBBC02625D50DA9B36BC3F112814493FFF6F8B4EF95A710E06AA6ACF49E655CB',
+    symbol: 'FRSH'
+  },
+  'farm-2': {
+    tokenId: '4BFDE23483A14EF72965B0C4538BCAB637021583E14791630F9447FE5AEF9142',
+    symbol: 'CREEK'
+  },
+  'farm-3': {
+    tokenId: '3E3AFA6F6C2A58B6145ABF8AC77EE7E43E7E7240F350B703891D99C6B8841DDA',
+    symbol: 'GROW'
+  },
+  'farm-4': {
+    tokenId: '72B238CCCBD4C5BBB2C2E4005A35E2C341028ACA6B03AF109E9DEAFF0407C0FE',
+    symbol: 'RIVER'
+  },
+  'farm-5': {
+    tokenId: '1376534AC46D45F0AC993B7CE4CD0AAFAE3E117E2EB26A29DBBEA681A7121B94',
+    symbol: 'SHARE'
+  },
+};
+
 const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
                                                                farmName,
+                                                               farmId,
                                                                totalPlots,
                                                                availablePlots,
                                                                onPlotSelect
@@ -82,6 +108,11 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
     const [purchaseError, setPurchaseError] = useState<string | null>(null);
     const [showPurchasePreview, setShowPurchasePreview] = useState(false);
 
+    // MPT-specific states
+    const [authorizationResult, setAuthorizationResult] = useState<any>(null);
+    const [purchaseResult, setPurchaseResult] = useState<any>(null);
+    const [mptStep, setMptStep] = useState<'authorize' | 'purchase' | 'complete'>('authorize');
+
     const getCropIcon = (cropType: string) => {
         switch (cropType) {
             case 'Lettuce': return <Leaf className="h-3 w-3" />;
@@ -120,7 +151,7 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
             if (existing) {
                 return prevSelected.filter(item => item.id !== plot.id);
             } else {
-                const newItem: CartItem = { ...plot, quantity: 1, status: 'selected' };
+                const newItem: CartItem = { ...plot, status: 'selected' };
                 return [...prevSelected, newItem];
             }
         });
@@ -128,17 +159,7 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
         if (!showCart) setShowCart(true);
     };
 
-    const updateQuantity = (plotId: string, change: number) => {
-        setSelectedPlots(prevSelected =>
-            prevSelected.map(item => {
-                if (item.id === plotId) {
-                    const newQuantity = Math.max(1, Math.min(5, item.quantity + change));
-                    return { ...item, quantity: newQuantity };
-                }
-                return item;
-            })
-        );
-    };
+    // Removed updateQuantity - plots are binary selections like airplane seats
 
     const removeFromCart = (plotId: string) => {
         setSelectedPlots(prevSelected => prevSelected.filter(item => item.id !== plotId));
@@ -149,75 +170,121 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
         );
     };
 
-    const totalXRP = selectedPlots.reduce((sum, item) => sum + (item.priceXRP * item.quantity), 0);
-    const totalYield = selectedPlots.reduce((sum, item) => sum + (parseFloat(item.estimatedYield) * item.quantity), 0);
+    const totalXRP = selectedPlots.reduce((sum, item) => sum + item.priceXRP, 0);
+    const totalYield = selectedPlots.reduce((sum, item) => sum + parseFloat(item.estimatedYield), 0);
+    const totalPlotCount = selectedPlots.length;
 
-    const handlePurchase = async () => {
-        if (!isConnected) {
-            setPurchaseError('Please connect your wallet first');
-            return;
-        }
+    // Get the farm's MPT token info
+    const farmToken = farmId ? FARM_MPT_MAPPING[farmId] : null;
 
-        if (selectedPlots.length === 0) return;
+    // Step 1: Authorize user to hold MPT tokens (Real XRPL transactions)
+    const handleAuthorizeUser = async () => {
+        if (!userWallet || !farmToken) return;
 
         setIsProcessing(true);
         setPurchaseError(null);
 
         try {
-            // Convert XRP to drops (1 XRP = 1,000,000 drops)
-            const totalDrops = Math.floor(totalXRP * 1000000).toString();
+            console.log('Creating real MPTokenAuthorize transaction...');
 
-            // Get issuer address from environment
-            const issuerAddress = process.env.NEXT_PUBLIC_ISSUER_WALLET_ADDRESS || 'rLSZsVxBP2ZoJgGRqkyCwCs5eg7LaLPhkX';
-
-            // Create memo with plot details
-            const plotDetails = selectedPlots.map(p => `${p.id}:${p.quantity}`).join(',');
-            const memo = `GrowFi-${farmName}-Plots:${plotDetails}`;
-
-            console.log('Sending payment:', {
-                amount: totalDrops,
-                destination: issuerAddress,
-                memo: memo
+            const response = await fetch('/api/mpt/real-authorize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userAddress: userWallet,
+                    mptTokenId: farmToken.tokenId,
+                    tokenSymbol: farmToken.symbol,
+                    amount: totalPlotCount.toString()
+                })
             });
 
-            const result = await sendPayment(issuerAddress, totalDrops, memo);
+            const result = await response.json();
 
             if (result.success) {
-                console.log('Payment successful!', result);
+                setAuthorizationResult(result);
+                setMptStep('purchase');
+                console.log('✅ Real MPTokenAuthorize transaction successful:', result);
+
+                // Auto-proceed to purchase step after a brief delay
+                setTimeout(() => {
+                    handlePurchaseMPT();
+                }, 1500);
+            } else {
+                setPurchaseError(result.error || 'MPTokenAuthorize failed');
+                console.error('MPTokenAuthorize failed:', result);
+            }
+
+        } catch (error) {
+            console.error('Authorization error:', error);
+            setPurchaseError('Failed to authorize user. Please try again.');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // Step 2: Purchase MPT tokens for selected plots (Real XRPL transactions)
+    const handlePurchaseMPT = async () => {
+        if (!userWallet || !farmToken || !authorizationResult) return;
+
+        setIsProcessing(true);
+        setPurchaseError(null);
+
+        try {
+            console.log('Creating real MPT Payment transaction...');
+            const plotDetails = selectedPlots.map(p => p.id).join(',');
+
+            const response = await fetch('/api/mpt/real-purchase', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userAddress: userWallet,
+                    mptTokenId: farmToken.tokenId,
+                    amount: totalPlotCount.toString(),
+                    tokenSymbol: farmToken.symbol,
+                    farmName,
+                    plotDetails
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                setPurchaseResult(result);
+                setMptStep('complete');
 
                 // Save plot ownership to localStorage
                 const existingOwnership = JSON.parse(localStorage.getItem('plotOwnership') || '{}');
                 selectedPlots.forEach(plot => {
                     existingOwnership[plot.id] = {
                         farmName,
-                        quantity: plot.quantity,
                         purchaseDate: new Date().toISOString(),
-                        txHash: result.txHash,
-                        priceXRP: plot.priceXRP
+                        mptTokenId: farmToken.tokenId,
+                        mptSymbol: farmToken.symbol,
+                        mptTxHash: result.txHash,
+                        authTxHash: authorizationResult.txHash,
+                        priceXRP: plot.priceXRP,
+                        cropType: plot.cropType,
+                        estimatedYield: plot.estimatedYield,
+                        plotId: plot.id
                     };
                 });
                 localStorage.setItem('plotOwnership', JSON.stringify(existingOwnership));
 
-                // Clear selection
-                setSelectedPlots([]);
-                setPlots(generatePlots());
-                setShowCart(false);
-                setShowPurchasePreview(false);
-
-                // Call parent callback
-                onPlotSelect?.([]);
-
-                alert(`Successfully purchased ${selectedPlots.reduce((sum, item) => sum + item.quantity, 0)} plots! Transaction hash: ${result.txHash}`);
+                console.log('✅ Real MPT Payment transaction successful:', result);
             } else {
-                throw new Error(result.error || 'Payment failed');
+                setPurchaseError(result.error || 'MPT payment failed');
+                console.error('MPT payment failed:', result);
             }
+
         } catch (error) {
-            console.error('Purchase error:', error);
-            setPurchaseError(error instanceof Error ? error.message : 'Purchase failed');
+            console.error('MPT purchase error:', error);
+            setPurchaseError('Failed to complete MPT purchase. Please try again.');
         } finally {
             setIsProcessing(false);
         }
     };
+
+    const handlePurchase = mptStep === 'authorize' ? handleAuthorizeUser : handlePurchaseMPT;
 
     const getPlotStyles = (plot: Plot) => {
         const baseStyles = "relative w-8 h-8 rounded-md border cursor-pointer transition-all duration-300 flex flex-col items-center justify-center text-xs font-medium";
@@ -399,31 +466,12 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
                                                 </button>
                                             </div>
 
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        onClick={() => updateQuantity(plot.id, -1)}
-                                                        className="w-8 h-8 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg flex items-center justify-center transition-colors"
-                                                        disabled={plot.quantity <= 1}
-                                                    >
-                                                        <Minus className="h-3 w-3" />
-                                                    </button>
-                                                    <span className="w-8 text-center font-semibold">{plot.quantity}</span>
-                                                    <button
-                                                        onClick={() => updateQuantity(plot.id, 1)}
-                                                        className="w-8 h-8 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg flex items-center justify-center transition-colors"
-                                                        disabled={plot.quantity >= 5}
-                                                    >
-                                                        <Plus className="h-3 w-3" />
-                                                    </button>
+                                            <div className="text-right">
+                                                <div className="font-bold text-slate-800">
+                                                    {plot.priceXRP.toFixed(1)} XRP
                                                 </div>
-                                                <div className="text-right">
-                                                    <div className="font-bold text-slate-800">
-                                                        {(plot.priceXRP * plot.quantity).toFixed(1)} XRP
-                                                    </div>
-                                                    <div className="text-xs text-slate-500">
-                                                        Est. {(parseFloat(plot.estimatedYield) * plot.quantity).toFixed(1)}kg
-                                                    </div>
+                                                <div className="text-xs text-slate-500">
+                                                    Est. {plot.estimatedYield}
                                                 </div>
                                             </div>
                                         </div>
@@ -434,7 +482,7 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
                                     <div className="space-y-3 mb-6">
                                         <div className="flex justify-between text-sm">
                                             <span className="text-slate-600">Total Plots:</span>
-                                            <span className="font-semibold">{selectedPlots.reduce((sum, item) => sum + item.quantity, 0)}</span>
+                                            <span className="font-semibold">{selectedPlots.length}</span>
                                         </div>
                                         <div className="flex justify-between text-sm">
                                             <span className="text-slate-600">Est. Total Yield:</span>
@@ -456,14 +504,85 @@ const FarmPlotSelector: React.FC<FarmPlotSelectorProps> = ({
                                         </div>
                                     )}
 
-                                    {/* Purchase Preview */}
-                                    {showPurchasePreview && (
-                                        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                            <h4 className="font-semibold text-blue-900 mb-2">Payment Details</h4>
-                                            <div className="text-sm text-blue-700 space-y-1">
-                                                <div>Recipient: {process.env.NEXT_PUBLIC_ISSUER_WALLET_ADDRESS?.slice(0, 10)}...</div>
-                                                <div>Amount: {totalXRP.toFixed(2)} XRP (≈ {(totalXRP * 1000000).toLocaleString()} drops)</div>
-                                                <div>For: {selectedPlots.reduce((sum, item) => sum + item.quantity, 0)} plots</div>
+                                    {/* MPT Token Information */}
+                                    {farmToken && (
+                                        <div className="mb-4 p-4 bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
+                                            <h4 className="font-semibold text-purple-900 mb-2 flex items-center gap-2">
+                                                🪙 MPT Token Details
+                                            </h4>
+                                            <div className="text-sm text-purple-700 space-y-2">
+                                                <div className="flex justify-between">
+                                                    <span>Token Symbol:</span>
+                                                    <span className="font-mono font-bold">{farmToken.symbol}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span>You'll Receive:</span>
+                                                    <span className="font-bold">{totalPlotCount} {farmToken.symbol} tokens</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span>Plot-to-Token Ratio:</span>
+                                                    <span>1 plot = 1 token</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Transaction Status Display */}
+                                    {(authorizationResult || purchaseResult) && (
+                                        <div className="mb-4 space-y-3">
+                                            {/* Step 1: Authorization */}
+                                            <div className={`p-3 rounded-lg border ${authorizationResult ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold ${
+                                                        authorizationResult ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'
+                                                    }`}>
+                                                        {authorizationResult ? '✓' : '1'}
+                                                    </div>
+                                                    <span className="text-sm font-medium">
+                                                        {authorizationResult ? 'Authorization Complete' : 'Authorize Token Holding'}
+                                                    </span>
+                                                </div>
+                                                {authorizationResult && (
+                                                    <a
+                                                        href={authorizationResult.explorerLink}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                                                    >
+                                                        View Transaction <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                )}
+                                            </div>
+
+                                            {/* Step 2: Purchase */}
+                                            <div className={`p-3 rounded-lg border ${purchaseResult ? 'bg-green-50 border-green-200' :
+                                                authorizationResult ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold ${
+                                                        purchaseResult ? 'bg-green-500 text-white' :
+                                                        authorizationResult ? 'bg-blue-500 text-white' : 'bg-gray-300 text-gray-500'
+                                                    }`}>
+                                                        {purchaseResult ? '✓' : '2'}
+                                                    </div>
+                                                    <span className="text-sm font-medium">
+                                                        {purchaseResult ? 'MPT Purchase Complete' : 'Purchase MPT Tokens'}
+                                                    </span>
+                                                </div>
+                                                {purchaseResult && (
+                                                    <div className="space-y-1">
+                                                        <p className="text-sm text-green-700">
+                                                            Received {purchaseResult.amount} {farmToken?.symbol} tokens!
+                                                        </p>
+                                                        <a
+                                                            href={purchaseResult.explorerLink}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                                                        >
+                                                            View Transaction <ExternalLink className="h-3 w-3" />
+                                                        </a>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}
