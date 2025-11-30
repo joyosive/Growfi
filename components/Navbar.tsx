@@ -11,6 +11,19 @@ export default function Navbar() {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
+  const handleConnectWallet = async (e: React.MouseEvent) => {
+    // Prevent event bubbling that might interfere with wallet popup
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      await connect();
+    } catch (error) {
+      console.error('Wallet connection failed:', error);
+      // Don't show additional alerts as the wallet context handles them
+    }
+  };
+
   return (
     <nav className="bg-white border-b border-neutral-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -53,7 +66,7 @@ export default function Navbar() {
               </div>
             ) : (
               <button
-                onClick={connect}
+                onClick={handleConnectWallet}
                 disabled={isConnecting}
                 className="btn-primary flex items-center space-x-2"
               >
